@@ -1,4 +1,4 @@
-package cmd
+package syncosc
 
 const (
 	AddressPulse       = "/sync/pulse"
