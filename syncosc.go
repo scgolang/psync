@@ -1,3 +1,5 @@
+// Package syncosc exists to define constants used in the oscsync protocol.
+// See http://github.com/scgolang/oscsync/README.md
 package syncosc
 
 const (
