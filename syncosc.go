@@ -11,5 +11,8 @@ const (
 	AddressTempo       = "/sync/tempo"
 )
 
+// MasterPort is the listening port for the oscsync master.
+const MasterPort = 5776
+
 // PulsesPerBar is the number of pulses in a bar (measure).
 const PulsesPerBar = 96
