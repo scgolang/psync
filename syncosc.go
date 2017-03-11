@@ -4,6 +4,9 @@ package syncosc
 
 import (
 	"time"
+
+	"github.com/pkg/errors"
+	"github.com/scgolang/osc"
 )
 
 // OSC addresses.
@@ -28,4 +31,29 @@ func GetPulseDuration(tempo float32) time.Duration {
 		return time.Duration(0)
 	}
 	return time.Duration(float32(int64(24e10)/PulsesPerBar) / tempo)
+}
+
+// Pulse represents the arguments in a /sync/pulse message.
+type Pulse struct {
+	Tempo float32
+	Count int32
+}
+
+// PulseFromMessage gets a Pulse from an OSC message.
+func PulseFromMessage(m osc.Message) (Pulse, error) {
+	p := Pulse{}
+	if expected, got := 2, len(m.Arguments); expected != got {
+		return p, errors.Errorf("expected %d arguments, got %d", expected, got)
+	}
+	tempo, err := m.Arguments[0].ReadFloat32()
+	if err != nil {
+		return p, errors.Wrap(err, "reading tempo")
+	}
+	count, err := m.Arguments[0].ReadInt32()
+	if err != nil {
+		return p, errors.Wrap(err, "reading counter")
+	}
+	p.Tempo = tempo
+	p.Count = count
+	return p, nil
 }
