@@ -156,5 +156,4 @@ func (t Ticker) Synchronize(ctx context.Context, slave Slave) error {
 			return ctx.Err()
 		}
 	}
-	return nil
 }
