@@ -4,10 +4,14 @@ package syncosc
 
 import (
 	"context"
+	"net"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
 	"github.com/scgolang/osc"
+	"golang.org/x/sync/errgroup"
 )
 
 // OSC addresses.
@@ -66,12 +70,74 @@ type Slave interface {
 	Pulse(Pulse) error
 }
 
-// ConnectorFunc connects a slave to an oscsync server.
-type ConnectorFunc func(ctx context.Context, slave Slave, host string) error
+// Synchronizer connects a slave to an oscsync server.
+type Synchronizer interface {
+	Synchronize(ctx context.Context, slave Slave) error
+}
+
+// OSC synchronizes processes via OSC messages.
+type OSC struct {
+	Host string
+}
+
+// Synchronize connects a slave to an oscsync master.
+// This func blocks forever.
+func (o OSC) Synchronize(ctx context.Context, slave Slave) error {
+	local, err := net.ResolveUDPAddr("udp", "0.0.0.0:0")
+	if err != nil {
+		return errors.Wrap(err, "creating listening address")
+	}
+	remote, err := net.ResolveUDPAddr("udp", net.JoinHostPort(o.Host, strconv.Itoa(MasterPort)))
+	if err != nil {
+		return errors.Wrap(err, "creating listening address")
+	}
+	g, gctx := errgroup.WithContext(ctx)
+
+	conn, err := osc.DialUDPContext(gctx, "udp", local, remote)
+	if err != nil {
+		return errors.Wrap(err, "connecting to master")
+	}
+	// Start the OSC server so we receive the master's messages.
+	g.Go(func() error {
+		return receivePulses(conn, slave)
+	})
+	// Announce the slave to the master.
+	portStr := strings.Split(conn.LocalAddr().String(), ":")[1]
+	lport, err := strconv.ParseInt(portStr, 10, 64)
+	if err != nil {
+		return errors.Wrapf(err, "parsing int from %s", portStr)
+	}
+	if err := conn.Send(osc.Message{
+		Address: AddressSlaveAdd,
+		Arguments: osc.Arguments{
+			osc.String("127.0.0.1"),
+			osc.Int(lport),
+		},
+	}); err != nil {
+		return errors.Wrap(err, "sending add-slave message")
+	}
+	return g.Wait()
+}
+
+func receivePulses(conn osc.Conn, slave Slave) error {
+	// Arbitrary number of worker routines.
+	return conn.Serve(8, osc.Dispatcher{
+		AddressPulse: osc.Method(func(m osc.Message) error {
+			pulse, err := PulseFromMessage(m)
+			if err != nil {
+				return errors.Wrap(err, "getting pulse from message")
+			}
+			return slave.Pulse(pulse)
+		}),
+	})
+}
 
 // Ticker runs a ticker that triggers the slave.
+type Ticker struct{}
+
+// Synchronize runs the ticker.
 // This func blocks forever.
-func Ticker(ctx context.Context, slave Slave, host string) error {
+func (t Ticker) Synchronize(ctx context.Context, slave Slave) error {
 	var (
 		count = int32(0)
 		tempo = float32(120)
